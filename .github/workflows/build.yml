@@ -10,8 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -22,11 +21,10 @@ jobs:
             squashfs-tools xorriso \
             dosfstools mtools
 
-      - name: Prepare build config
+      - name: Setup config
         run: |
           mkdir -p build/config/package-lists
 
-          # Proper base system (required for ISO)
           cat << 'EOF' > build/config/package-lists/base.list.chroot
           systemd
           systemd-sysv
@@ -41,7 +39,6 @@ jobs:
 
           cd build
 
-          # IMPORTANT: enable live system
           sudo lb config \
             --mode debian \
             --distribution bookworm \
@@ -52,22 +49,28 @@ jobs:
             --debian-installer none \
             --apt-recommends false
 
-      - name: Build ISO
+      - name: Build (force binary stage)
         run: |
           cd build
           sudo lb clean
-          sudo lb build 2>&1 | tee ../build.log
+          sudo lb build --verbose
 
-      - name: Check output
+      - name: Debug output
         run: |
+          echo "==== BUILD DIR ===="
           ls -lah build || true
+
+          echo "==== SEARCH ISO ===="
+          find . -name "*.iso" || true
 
       - name: Upload ISO
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
-          path: build/*.iso
+          path: |
+            build/*.iso
+            *.iso
 
       - name: Upload logs
         if: always()
