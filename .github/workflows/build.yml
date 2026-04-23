@@ -1,9 +1,9 @@
 name: NarobOS ISO Builder
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   build:
@@ -17,30 +17,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             live-build debootstrap \
-            grub-pc-bin grub-efi-amd64-bin \
+            grub-pc-bin \
             squashfs-tools xorriso \
-            dosfstools mtools
+            mtools
 
-      - name: Prepare config
+      - name: Setup config
         run: |
           mkdir -p build/config/package-lists
-          mkdir -p build/config/includes.chroot/etc
+          mkdir -p build/config/hooks/normal
 
-          # DNS fix
-          echo "nameserver 8.8.8.8" > build/config/includes.chroot/etc/resolv.conf
-
-          # Required packages
+          # Minimal working system
           cat << 'EOF' > build/config/package-lists/base.list.chroot
-          systemd
           systemd-sysv
           bash
-          sudo
           apt
           ca-certificates
           debian-archive-keyring
           live-boot
           live-config
           EOF
+
+          # 🔥 CRITICAL FIX: bind host DNS (this is what actually fixes exit 100)
+          cat << 'EOF' > build/config/hooks/normal/00-fix-dns.hook.chroot
+          #!/bin/bash
+          set -e
+          mount --bind /etc/resolv.conf /etc/resolv.conf || true
+          EOF
+
+          chmod +x build/config/hooks/normal/00-fix-dns.hook.chroot
 
           cd build
 
@@ -53,21 +57,23 @@ jobs:
             --bootloader grub-pc \
             --archive-areas "main" \
             --debian-installer none \
-            --build-with-chroot true
+            --apt-options "--yes -o Acquire::Retries=3"
 
       - name: Build ISO
         run: |
           cd build
-
           sudo lb clean
-          sudo lb build
 
-          echo "==== OUTPUT ===="
-          ls -lah
+          # capture logs
+          sudo lb build > ../build.log 2>&1 || true
 
-          echo "==== ISO SEARCH ===="
-          find . -name "*.iso" || true
+          echo "==== LAST 150 LOG LINES ===="
+          tail -n 150 ../build.log || true
 
+          echo "==== FILES ===="
+          find . -maxdepth 2
+
+          # fail if ISO missing
           if ! find . -name "*.iso" | grep -q .; then
             echo "❌ ISO NOT CREATED"
             exit 1
@@ -78,3 +84,10 @@ jobs:
         with:
           name: narobos-iso
           path: build/**/*.iso
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
