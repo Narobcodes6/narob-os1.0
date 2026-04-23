@@ -1,73 +1,82 @@
-name: Build NarobOS ISO (Stable)
+name: NarobOS ISO Pipeline
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
+  build-iso:
+    name: Build Live ISO
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
 
     steps:
-      - name: Checkout
+      - name: Clone Repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Required Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            live-build debootstrap xorriso squashfs-tools \
-            grub-pc-bin grub-efi-amd64-bin mtools dosfstools
+            live-build \
+            debootstrap \
+            grub-efi-amd64-bin \
+            grub-pc-bin \
+            squashfs-tools \
+            xorriso \
+            dosfstools \
+            mtools
 
-      - name: Prepare config
+      - name: Set Up Build Directory
         run: |
-          mkdir narobos
-          cd narobos
+          mkdir -p iso-build
+          cd iso-build
 
-          # Create config script
-          mkdir -p auto
-          cat > auto/config << 'EOF'
+          mkdir -p auto config/package-lists
+
+          cat << 'EOF' > auto/config
           #!/bin/sh
           set -e
 
           lb config \
             --mode debian \
             --distribution bookworm \
-            --architecture amd64 \
+            --architectures amd64 \
             --binary-images iso-hybrid \
-            --debian-installer none \
             --archive-areas "main contrib non-free non-free-firmware" \
             --bootloader grub-efi \
-            --apt-recommends false
+            --debian-installer none \
+            --apt-recommends false \
+            --iso-volume "NarobOS"
           EOF
 
           chmod +x auto/config
 
-          # Minimal package list (safe)
-          mkdir -p config/package-lists
-          cat > config/package-lists/base.list.chroot << 'EOF'
+          cat << 'EOF' > config/package-lists/system.list.chroot
           systemd
           systemd-sysv
-          sudo
           bash
+          sudo
           apt
-          debian-archive-keyring
           ca-certificates
+          debian-archive-keyring
           EOF
 
-      - name: Configure
+      - name: Configure Build
         run: |
-          cd narobos
+          cd iso-build
           sudo ./auto/config
 
-      - name: Build ISO
+      - name: Execute Build
         run: |
-          cd narobos
+          cd iso-build
           sudo lb clean
           sudo lb build
 
-      - name: Upload ISO
+      - name: Upload ISO Artifact
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
-          path: narobos/*.iso
+          path: iso-build/*.iso
