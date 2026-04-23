@@ -61,7 +61,7 @@ jobs:
           EOF
 
           # ------------------------------------------------
-          # Base packages
+          # Base packages (Debian only - no Ubuntu packages)
           # ------------------------------------------------
           cat > narobos/config/package-lists/base.list.chroot << 'EOF'
           systemd
@@ -77,8 +77,6 @@ jobs:
           wget
           ca-certificates
           gnupg
-          apt-transport-https
-          software-properties-common
           firmware-linux
           firmware-linux-nonfree
           firmware-amd-graphics
@@ -227,8 +225,8 @@ jobs:
           elif echo "$WIFI" | grep -qi atheros; then
             apt-get install -y firmware-atheros
           fi
-          echo "[NarobOS] Drivers installed successfully."
-          zenity --info --title="NarobOS Drivers" --text="Hardware drivers installed successfully!\n\nRestart may be required for changes to take effect." 2>/dev/null || true
+          echo "[NarobOS] Drivers installed."
+          zenity --info --title="NarobOS" --text="Drivers installed!\nA restart may be required." 2>/dev/null || true
           rm -f /etc/xdg/autostart/narobos-drivers.desktop
           DRIVERSCRIPT
           chmod +x /usr/local/bin/narobos-install-drivers
