@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -25,37 +26,41 @@ jobs:
         run: |
           mkdir -p build/config/package-lists
 
-          # MINIMAL packages (nothing that can break)
+          # Proper base system (required for ISO)
           cat << 'EOF' > build/config/package-lists/base.list.chroot
+          systemd
+          systemd-sysv
+          bash
+          sudo
           apt
-          debian-archive-keyring
           ca-certificates
+          debian-archive-keyring
+          live-boot
+          live-config
           EOF
 
           cd build
 
+          # IMPORTANT: enable live system
           sudo lb config \
             --mode debian \
             --distribution bookworm \
             --architectures amd64 \
             --binary-images iso-hybrid \
+            --system live \
             --archive-areas "main" \
             --debian-installer none \
             --apt-recommends false
 
-      - name: Build ISO (debug mode)
+      - name: Build ISO
         run: |
           cd build
           sudo lb clean
+          sudo lb build 2>&1 | tee ../build.log
 
-          # FORCE full logs
-          sudo lb build 2>&1 | tee ../full-build.log
-
-      - name: Show errors if failed
-        if: failure()
+      - name: Check output
         run: |
-          echo "==== LAST 200 LINES OF LOG ===="
-          tail -n 200 full-build.log || true
+          ls -lah build || true
 
       - name: Upload ISO
         if: success()
@@ -68,5 +73,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
-          path: full-build.log
+          name: build-log
+          path: build.log
