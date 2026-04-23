@@ -10,8 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -22,42 +21,52 @@ jobs:
             squashfs-tools xorriso \
             dosfstools mtools
 
-      - name: Setup config
+      - name: Prepare build config
         run: |
           mkdir -p build/config/package-lists
 
-          # Create package list FIRST
+          # MINIMAL packages (nothing that can break)
           cat << 'EOF' > build/config/package-lists/base.list.chroot
-          systemd
-          systemd-sysv
-          bash
-          sudo
           apt
-          ca-certificates
           debian-archive-keyring
+          ca-certificates
           EOF
 
           cd build
 
-          # THEN run config
           sudo lb config \
             --mode debian \
             --distribution bookworm \
             --architectures amd64 \
             --binary-images iso-hybrid \
-            --archive-areas "main contrib non-free non-free-firmware" \
+            --archive-areas "main" \
             --debian-installer none \
-            --bootloader grub-efi \
             --apt-recommends false
 
-      - name: Build ISO
+      - name: Build ISO (debug mode)
         run: |
           cd build
           sudo lb clean
-          sudo lb build
+
+          # FORCE full logs
+          sudo lb build 2>&1 | tee ../full-build.log
+
+      - name: Show errors if failed
+        if: failure()
+        run: |
+          echo "==== LAST 200 LINES OF LOG ===="
+          tail -n 200 full-build.log || true
 
       - name: Upload ISO
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
           path: build/*.iso
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: full-build.log
