@@ -14,33 +14,22 @@ jobs:
 
       - name: Install dependencies
         run: |
-          set -e
           sudo apt-get update
           sudo apt-get install -y \
             live-build debootstrap \
             grub-pc-bin grub-efi-amd64-bin \
             squashfs-tools xorriso \
-            dosfstools mtools gnupg
+            dosfstools mtools
 
       - name: Prepare config
         run: |
-          set -e
-
           mkdir -p build/config/package-lists
           mkdir -p build/config/includes.chroot/etc
-          mkdir -p build/config/hooks/live
 
-          # Fix DNS
+          # DNS fix
           echo "nameserver 8.8.8.8" > build/config/includes.chroot/etc/resolv.conf
 
-          # Force clean Debian sources
-          cat << 'EOF' > build/config/includes.chroot/etc/apt/sources.list
-          deb http://deb.debian.org/debian bookworm main
-          deb http://deb.debian.org/debian-security bookworm-security main
-          deb http://deb.debian.org/debian bookworm-updates main
-          EOF
-
-          # Minimal working system
+          # Required packages
           cat << 'EOF' > build/config/package-lists/base.list.chroot
           systemd
           systemd-sysv
@@ -53,15 +42,6 @@ jobs:
           live-config
           EOF
 
-          # Force apt update inside chroot (critical fix)
-          cat << 'EOF' > build/config/hooks/live/0100-apt-update.chroot
-          #!/bin/bash
-          set -e
-          apt-get update
-          EOF
-
-          chmod +x build/config/hooks/live/0100-apt-update.chroot
-
           cd build
 
           sudo lb config \
@@ -70,20 +50,19 @@ jobs:
             --architectures amd64 \
             --binary-images iso-hybrid \
             --system live \
-            --mirror-bootstrap http://deb.debian.org/debian \
-            --mirror-chroot http://deb.debian.org/debian \
+            --bootloader grub-pc \
             --archive-areas "main" \
-            --debian-installer none
+            --debian-installer none \
+            --build-with-chroot true
 
       - name: Build ISO
         run: |
-          set -e
           cd build
 
           sudo lb clean
-          sudo lb build > ../build.log 2>&1
+          sudo lb build
 
-          echo "==== OUTPUT FILES ===="
+          echo "==== OUTPUT ===="
           ls -lah
 
           echo "==== ISO SEARCH ===="
@@ -91,7 +70,6 @@ jobs:
 
           if ! find . -name "*.iso" | grep -q .; then
             echo "❌ ISO NOT CREATED"
-            tail -n 150 ../build.log
             exit 1
           fi
 
@@ -100,10 +78,3 @@ jobs:
         with:
           name: narobos-iso
           path: build/**/*.iso
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
