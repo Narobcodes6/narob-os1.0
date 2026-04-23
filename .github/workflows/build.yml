@@ -22,12 +22,17 @@ jobs:
             squashfs-tools xorriso \
             dosfstools mtools
 
-      - name: Configure build
+      - name: Prepare config
         run: |
           set -e
 
           mkdir -p build/config/package-lists
+          mkdir -p build/config/includes.chroot/etc
 
+          # FIX: working DNS inside chroot (prevents exit 100)
+          echo "nameserver 8.8.8.8" > build/config/includes.chroot/etc/resolv.conf
+
+          # REQUIRED packages for actual ISO creation
           cat << 'EOF' > build/config/package-lists/base.list.chroot
           systemd
           systemd-sysv
@@ -42,6 +47,7 @@ jobs:
 
           cd build
 
+          # IMPORTANT: ensure live ISO is actually built
           sudo lb config \
             --mode debian \
             --distribution bookworm \
@@ -49,22 +55,29 @@ jobs:
             --binary-images iso-hybrid \
             --system live \
             --archive-areas "main" \
-            --debian-installer none
+            --debian-installer none \
+            --iso-volume "NarobOS"
 
-      - name: Build ISO (strict)
+      - name: Build ISO
         run: |
           set -e
           cd build
 
           sudo lb clean
 
-          # FORCE LOG + FAIL IF ANYTHING BREAKS
+          # Capture full logs
           sudo lb build > ../build.log 2>&1
 
-          # FAIL if ISO not created
-          if ! ls *.iso 1> /dev/null 2>&1; then
+          echo "==== BUILD OUTPUT ===="
+          ls -lah .
+
+          echo "==== SEARCHING FOR ISO ===="
+          find . -name "*.iso" || true
+
+          # HARD FAIL if ISO not created
+          if ! find . -name "*.iso" | grep -q .; then
             echo "❌ ISO was NOT created"
-            echo "===== LAST LOG OUTPUT ====="
+            echo "==== LAST 100 LOG LINES ===="
             tail -n 100 ../build.log
             exit 1
           fi
@@ -73,7 +86,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
-          path: build/*.iso
+          path: |
+            build/*.iso
+            build/**/*.iso
 
       - name: Upload logs
         if: always()
