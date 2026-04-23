@@ -14,6 +14,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y \
             live-build debootstrap \
@@ -21,8 +22,10 @@ jobs:
             squashfs-tools xorriso \
             dosfstools mtools
 
-      - name: Setup config
+      - name: Configure build
         run: |
+          set -e
+
           mkdir -p build/config/package-lists
 
           cat << 'EOF' > build/config/package-lists/base.list.chroot
@@ -46,31 +49,31 @@ jobs:
             --binary-images iso-hybrid \
             --system live \
             --archive-areas "main" \
-            --debian-installer none \
-            --apt-recommends false
+            --debian-installer none
 
-      - name: Build (force binary stage)
+      - name: Build ISO (strict)
         run: |
+          set -e
           cd build
+
           sudo lb clean
-          sudo lb build --verbose
 
-      - name: Debug output
-        run: |
-          echo "==== BUILD DIR ===="
-          ls -lah build || true
+          # FORCE LOG + FAIL IF ANYTHING BREAKS
+          sudo lb build > ../build.log 2>&1
 
-          echo "==== SEARCH ISO ===="
-          find . -name "*.iso" || true
+          # FAIL if ISO not created
+          if ! ls *.iso 1> /dev/null 2>&1; then
+            echo "❌ ISO was NOT created"
+            echo "===== LAST LOG OUTPUT ====="
+            tail -n 100 ../build.log
+            exit 1
+          fi
 
       - name: Upload ISO
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
-          path: |
-            build/*.iso
-            *.iso
+          path: build/*.iso
 
       - name: Upload logs
         if: always()
