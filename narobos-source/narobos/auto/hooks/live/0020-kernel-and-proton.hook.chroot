@@ -1,0 +1,29 @@
+#!/bin/bash
+# NarobOS — install Liquorix kernel + Proton-GE
+set -e
+
+echo "[NarobOS] Installing Liquorix low-latency kernel..."
+apt-get install -y linux-image-liquorix-amd64 linux-headers-liquorix-amd64
+
+# Remove stock kernel to keep the image lean
+apt-get remove -y linux-image-amd64 linux-headers-amd64 || true
+apt-get autoremove -y
+
+echo "[NarobOS] Installing Proton-GE (latest)..."
+# Get latest Proton-GE release from GitHub
+PROTON_GE_VERSION=$(curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest \
+    | grep '"tag_name"' | cut -d'"' -f4)
+
+PROTON_GE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${PROTON_GE_VERSION}/${PROTON_GE_VERSION}.tar.gz"
+
+mkdir -p /usr/share/narobos/proton-ge
+curl -fsSL "$PROTON_GE_URL" -o /tmp/proton-ge.tar.gz
+tar -xzf /tmp/proton-ge.tar.gz -C /usr/share/narobos/proton-ge
+rm /tmp/proton-ge.tar.gz
+
+# Symlink into Steam compatibility tools location for all users
+mkdir -p /etc/skel/.steam/root/compatibilitytools.d
+ln -sf /usr/share/narobos/proton-ge/${PROTON_GE_VERSION} \
+    /etc/skel/.steam/root/compatibilitytools.d/${PROTON_GE_VERSION}
+
+echo "[NarobOS] Proton-GE ${PROTON_GE_VERSION} installed."

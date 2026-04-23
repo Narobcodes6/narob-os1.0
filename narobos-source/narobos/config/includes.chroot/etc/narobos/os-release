@@ -1,0 +1,11 @@
+NAME="NarobOS"
+VERSION="1.0"
+ID=narobos
+ID_LIKE=debian
+PRETTY_NAME="NarobOS 1.0"
+VERSION_ID="1.0"
+HOME_URL="https://narobos.local"
+SUPPORT_URL="https://narobos.local"
+BUG_REPORT_URL="https://narobos.local"
+ANSI_COLOR="1;35"
+LOGO=narobos-logo

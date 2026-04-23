@@ -1,0 +1,88 @@
+#!/bin/bash
+# NarobOS — system-level gaming performance tuning
+set -e
+
+echo "[NarobOS] Applying gaming performance settings..."
+
+# --- GameMode daemon config ---
+cat > /etc/gamemode.ini <<EOF
+[general]
+renice=10
+ioprio=0
+
+[gpu]
+apply_gpu_optimisations=accept-responsibility
+gpu_device=0
+amd_performance_level=high
+
+[custom]
+start=notify-send "GameMode" "Performance mode active"
+end=notify-send "GameMode" "Performance mode off"
+EOF
+
+# --- Kernel parameters for gaming (low latency, memory) ---
+cat > /etc/sysctl.d/99-narobos-gaming.conf <<EOF
+# NarobOS gaming tweaks
+
+# Reduce swap usage (keep more in RAM)
+vm.swappiness=10
+
+# Better memory allocation for games
+vm.dirty_ratio=10
+vm.dirty_background_ratio=5
+
+# Network performance
+net.core.netdev_max_backlog=16384
+net.ipv4.tcp_fastopen=3
+
+# Increase max inotify watches (needed by Steam)
+fs.inotify.max_user_watches=524288
+EOF
+
+# --- CPU scheduler hint for gaming ---
+cat > /etc/udev/rules.d/99-narobos-cpu.rules <<EOF
+# Set CPU governor to performance when on AC power
+SUBSYSTEM=="power_supply", ATTR{online}=="1", \
+    RUN+="/bin/sh -c 'for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > \$f; done'"
+EOF
+
+# --- MangoHud default config ---
+mkdir -p /etc/skel/.config/MangoHud
+cat > /etc/skel/.config/MangoHud/MangoHud.conf <<EOF
+# NarobOS default MangoHud overlay
+fps
+frametime
+cpu_stats
+gpu_stats
+gpu_temp
+cpu_temp
+ram
+vram
+vulkan_driver
+wine
+frame_timing
+position=top-left
+font_size=20
+background_alpha=0.5
+toggle_hud=F12
+EOF
+
+# --- Steam launch flags for better performance ---
+mkdir -p /etc/skel/.steam
+cat > /etc/skel/.steam/narobos-launch-options.txt <<EOF
+# Recommended Steam per-game launch options for NarobOS:
+#
+# AMD GPU:
+#   RADV_PERFTEST=aco gamemoderun mangohud %command%
+#
+# Nvidia GPU:
+#   __NV_PRIME_RENDER_OFFLOAD=1 gamemoderun mangohud %command%
+#
+# General (any GPU):
+#   gamemoderun mangohud %command%
+EOF
+
+# --- Enable gamemode service ---
+systemctl enable gamemoded || true
+
+echo "[NarobOS] Gaming performance settings applied."

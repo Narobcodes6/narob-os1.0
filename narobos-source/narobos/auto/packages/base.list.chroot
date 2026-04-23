@@ -1,0 +1,101 @@
+# NarobOS base system packages
+# Keep this minimal — only what's needed to boot and run games
+
+# --- Core system ---
+systemd
+systemd-sysv
+dbus
+udev
+kmod
+sudo
+bash
+coreutils
+util-linux
+procps
+psmisc
+less
+nano
+curl
+wget
+ca-certificates
+gnupg
+apt-transport-https
+software-properties-common
+
+# --- Hardware / firmware ---
+firmware-linux
+firmware-linux-nonfree
+firmware-amd-graphics
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+linux-headers-amd64
+
+# --- GPU drivers (open source) ---
+mesa-vulkan-drivers
+mesa-va-drivers
+mesa-vdpau-drivers
+libvulkan1
+vulkan-tools
+libgl1-mesa-dri
+libgles2
+vainfo
+
+# --- Nvidia (proprietary - optional, uncomment if needed) ---
+# nvidia-driver
+# nvidia-vulkan-icd
+
+# --- Audio ---
+pipewire
+pipewire-pulse
+pipewire-alsa
+pipewire-jack
+wireplumber
+alsa-utils
+pavucontrol
+
+# --- Display / Wayland ---
+wayland-protocols
+libwayland-client0
+libwayland-server0
+xwayland
+weston
+
+# --- Networking ---
+network-manager
+network-manager-gnome
+wpasupplicant
+iw
+rfkill
+
+# --- Fonts ---
+fonts-dejavu-core
+fonts-liberation
+fonts-noto-core
+fontconfig
+
+# --- Input ---
+libinput-tools
+xserver-xorg-input-libinput
+joystick
+jstest-gtk
+
+# --- Compression / archive ---
+bzip2
+xz-utils
+zstd
+unzip
+p7zip-full
+
+# --- Filesystem support ---
+ntfs-3g
+exfat-fuse
+dosfstools
+e2fsprogs
+
+# --- Misc tools ---
+htop
+pciutils
+usbutils
+inxi
+lshw

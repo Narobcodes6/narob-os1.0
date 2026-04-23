@@ -1,0 +1,60 @@
+# NarobOS build VM
+# Requires: VirtualBox + Vagrant on Windows
+# Usage: vagrant up  →  vagrant ssh  →  cd /narobos && ./build.sh
+
+Vagrant.configure("2") do |config|
+
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "narobos-builder"
+
+  # Share your NarobOS project folder into the VM
+  # Windows path is auto-converted by Vagrant
+  config.vm.synced_folder ".", "/narobos", type: "virtualbox"
+
+  # VM hardware — bump ram/cpus if your PC can spare it
+  config.vm.provider "virtualbox" do |vb|
+    vb.name   = "NarobOS Builder"
+    vb.memory = 6144   # 6GB RAM (minimum 4096)
+    vb.cpus   = 4      # 4 cores (minimum 2)
+    vb.gui    = false
+
+    # Allocate more disk space for build output
+    vb.customize ["modifyvm", :id, "--ioapic", "on"]
+    vb.customize ["modifyvm", :id, "--vram", "16"]
+  end
+
+  # Provision: install everything needed to build NarobOS
+  config.vm.provision "shell", inline: <<-SHELL
+    echo "[NarobOS] Updating system..."
+    apt-get update -qq
+    apt-get upgrade -y -qq
+
+    echo "[NarobOS] Installing build dependencies..."
+    apt-get install -y \
+      live-build \
+      debootstrap \
+      curl \
+      gnupg \
+      xorriso \
+      isolinux \
+      syslinux-utils \
+      squashfs-tools \
+      grub-efi-amd64-bin \
+      grub-pc-bin \
+      mtools \
+      git \
+      rsync \
+      tree
+
+    echo "[NarobOS] Setting up build permissions..."
+    # Allow vagrant user to run lb commands without password
+    echo 'vagrant ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers.d/vagrant-nopasswd
+
+    echo ""
+    echo "============================================"
+    echo "  NarobOS build environment is ready!"
+    echo "  Run: cd /narobos && ./build.sh"
+    echo "============================================"
+  SHELL
+
+end

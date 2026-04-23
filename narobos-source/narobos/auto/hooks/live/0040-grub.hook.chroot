@@ -1,0 +1,56 @@
+#!/bin/bash
+# NarobOS — configure GRUB bootloader appearance
+set -e
+
+echo "[NarobOS] Configuring GRUB..."
+
+cat > /etc/default/grub <<EOF
+# NarobOS GRUB configuration
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=3
+GRUB_DISTRIBUTOR="NarobOS"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash mitigations=off nowatchdog nohz_full=all rcu_nocbs=all"
+GRUB_CMDLINE_LINUX=""
+GRUB_TERMINAL_OUTPUT="gfxterm"
+GRUB_GFXMODE="1920x1080x32,auto"
+GRUB_GFXPAYLOAD_LINUX="keep"
+EOF
+
+# Create NarobOS GRUB theme directory
+mkdir -p /boot/grub/themes/narobos
+
+cat > /boot/grub/themes/narobos/theme.txt <<EOF
+# NarobOS GRUB theme
+desktop-color: "#0d0d14"
+title-color: "#ffffff"
+title-font: "DejaVu Sans Bold 18"
+message-font: "DejaVu Sans 12"
+terminal-font: "DejaVu Sans Mono 12"
+
++ label {
+  top = 45%
+  left = 50%-200
+  width = 400
+  height = 60
+  text = "NarobOS"
+  font = "DejaVu Sans Bold 32"
+  color = "#e8e8f0"
+  align = "center"
+}
+
++ boot_menu {
+  left = 50%-150
+  top = 55%
+  width = 300
+  height = 200
+  item_font = "DejaVu Sans 14"
+  item_color = "#aaaacc"
+  selected_item_color = "#ffffff"
+  item_height = 40
+  item_padding = 8
+  item_spacing = 4
+}
+EOF
+
+update-grub 2>/dev/null || true
+echo "[NarobOS] GRUB configured."

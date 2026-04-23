@@ -1,0 +1,41 @@
+#!/bin/bash
+# NarobOS — add third-party repositories
+# Runs inside the chroot before packages are installed
+set -e
+
+echo "[NarobOS] Adding repositories..."
+
+# Enable i386 (32-bit) architecture for Steam/Proton
+dpkg --add-architecture i386
+
+# --- Steam repo ---
+curl -fsSL https://repo.steampowered.com/steam/archive/precise/steam.gpg \
+    -o /usr/share/keyrings/steam.gpg
+
+cat > /etc/apt/sources.list.d/steam.list <<EOF
+deb [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] \
+    https://repo.steampowered.com/steam/ stable steam
+EOF
+
+# --- Liquorix kernel (low-latency gaming kernel) ---
+curl -fsSL 'https://liquorix.net/liquorix-keyring.gpg' \
+    -o /usr/share/keyrings/liquorix-keyring.gpg
+
+cat > /etc/apt/sources.list.d/liquorix.list <<EOF
+deb [arch=amd64 signed-by=/usr/share/keyrings/liquorix-keyring.gpg] \
+    https://liquorix.net/debian bookworm main
+EOF
+
+# --- Lutris repo ---
+curl -fsSL https://download.opensuse.org/repositories/home:/strycore/Debian_12/Release.key \
+    | gpg --dearmor -o /usr/share/keyrings/lutris.gpg
+
+cat > /etc/apt/sources.list.d/lutris.list <<EOF
+deb [signed-by=/usr/share/keyrings/lutris.gpg] \
+    https://download.opensuse.org/repositories/home:/strycore/Debian_12/ ./
+EOF
+
+# Update package lists with new repos
+apt-get update
+
+echo "[NarobOS] Repositories added successfully."

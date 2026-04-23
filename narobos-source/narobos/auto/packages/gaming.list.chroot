@@ -1,0 +1,44 @@
+# NarobOS gaming packages
+# Steam, Proton support, performance tools
+
+# --- Steam ---
+# (Steam repo added via hook — see hooks/live/0010-add-repos.hook.chroot)
+steam
+steam-devices
+
+# --- Proton dependencies ---
+# 32-bit support (required for Steam/Proton)
+libgl1:i386
+libvulkan1:i386
+libc6:i386
+libgcc-s1:i386
+
+# --- Gaming performance ---
+gamemode
+gamescope
+mangohud
+mangohud:i386
+
+# --- Proton-GE is installed via hook (not in apt) ---
+
+# --- Controller support ---
+steam-devices
+libsdl2-2.0-0
+libsdl2-2.0-0:i386
+
+# --- Media codecs (needed by many games) ---
+ffmpeg
+libavcodec-extra
+
+# --- Wine (fallback for non-Steam Windows games) ---
+wine
+wine32
+wine64
+winetricks
+
+# --- Lutris (multi-platform game manager) ---
+lutris
+
+# --- Performance monitoring ---
+nvtop
+cpu-x
