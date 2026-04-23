@@ -2,43 +2,33 @@ name: NarobOS ISO Builder
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build ISO
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            live-build \
-            debootstrap \
-            grub-pc-bin \
-            grub-efi-amd64-bin \
-            squashfs-tools \
-            xorriso \
-            dosfstools \
-            mtools \
-            dos2unix
+            live-build debootstrap \
+            grub-pc-bin grub-efi-amd64-bin \
+            squashfs-tools xorriso \
+            dosfstools mtools
 
-      - name: Setup live-build config
+      - name: Setup config
         run: |
-          mkdir -p build/auto
           mkdir -p build/config/package-lists
+          cd build
 
-          cat << 'EOF' > build/auto/config
-          #!/bin/sh
-          set -e
-
-          lb config \
+          # Directly configure (no script = no permission issues)
+          sudo lb config \
             --mode debian \
             --distribution bookworm \
             --architectures amd64 \
@@ -47,12 +37,9 @@ jobs:
             --debian-installer none \
             --bootloader grub-efi \
             --apt-recommends false
-          EOF
 
-          chmod +x build/auto/config
-          dos2unix build/auto/config
-
-          cat << 'EOF' > build/config/package-lists/base.list.chroot
+          # Minimal package list
+          cat << 'EOF' > config/package-lists/base.list.chroot
           systemd
           systemd-sysv
           bash
@@ -61,12 +48,6 @@ jobs:
           ca-certificates
           debian-archive-keyring
           EOF
-
-      - name: Run configuration
-        run: |
-          cd build
-          ls -l auto
-          sudo ./auto/config
 
       - name: Build ISO
         run: |
