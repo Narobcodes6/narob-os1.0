@@ -25,9 +25,21 @@ jobs:
       - name: Setup config
         run: |
           mkdir -p build/config/package-lists
+
+          # Create package list FIRST
+          cat << 'EOF' > build/config/package-lists/base.list.chroot
+          systemd
+          systemd-sysv
+          bash
+          sudo
+          apt
+          ca-certificates
+          debian-archive-keyring
+          EOF
+
           cd build
 
-          # Directly configure (no script = no permission issues)
+          # THEN run config
           sudo lb config \
             --mode debian \
             --distribution bookworm \
@@ -37,17 +49,6 @@ jobs:
             --debian-installer none \
             --bootloader grub-efi \
             --apt-recommends false
-
-          # Minimal package list
-          cat << 'EOF' > config/package-lists/base.list.chroot
-          systemd
-          systemd-sysv
-          bash
-          sudo
-          apt
-          ca-certificates
-          debian-archive-keyring
-          EOF
 
       - name: Build ISO
         run: |
