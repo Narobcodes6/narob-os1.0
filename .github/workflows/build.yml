@@ -29,8 +29,11 @@ jobs:
         run: |
           mkdir -p narobos/auto/hooks/live
           mkdir -p narobos/config/package-lists
-          mkdir -p narobos/config/includes.chroot/etc/narobos
+          mkdir -p narobos/config/includes.chroot/{etc/narobos,etc/calamares/modules,usr/share/applications,usr/local/bin,etc/xdg/autostart,etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml}
 
+          # ------------------------------------------------
+          # auto/config
+          # ------------------------------------------------
           cat > narobos/auto/config << 'EOF'
           #!/bin/sh
           set -e
@@ -54,6 +57,9 @@ jobs:
             "${@}"
           EOF
 
+          # ------------------------------------------------
+          # Base packages
+          # ------------------------------------------------
           cat > narobos/config/package-lists/base.list.chroot << 'EOF'
           systemd
           systemd-sysv
@@ -69,6 +75,7 @@ jobs:
           ca-certificates
           gnupg
           apt-transport-https
+          software-properties-common
           firmware-linux
           firmware-linux-nonfree
           firmware-amd-graphics
@@ -83,24 +90,91 @@ jobs:
           pipewire-alsa
           wireplumber
           alsa-utils
+          pavucontrol
           network-manager
+          network-manager-gnome
           wpasupplicant
           fonts-dejavu-core
           fonts-liberation
+          fonts-noto-core
           libinput-tools
           ntfs-3g
+          exfat-fuse
+          dosfstools
           htop
           pciutils
           usbutils
+          inxi
+          lshw
+          unzip
+          p7zip-full
           EOF
 
+          # ------------------------------------------------
+          # GUI — XFCE desktop (lightweight, fast)
+          # ------------------------------------------------
+          cat > narobos/config/package-lists/gui.list.chroot << 'EOF'
+          xfce4
+          xfce4-terminal
+          xfce4-taskmanager
+          xfce4-screenshooter
+          xfce4-power-manager
+          xfce4-notifyd
+          xfce4-pulseaudio-plugin
+          lightdm
+          lightdm-gtk-greeter
+          lightdm-gtk-greeter-settings
+          xorg
+          xserver-xorg
+          xserver-xorg-input-libinput
+          x11-xserver-utils
+          thunar
+          thunar-archive-plugin
+          mousepad
+          ristretto
+          file-roller
+          gvfs
+          gvfs-backends
+          EOF
+
+          # ------------------------------------------------
+          # Gaming packages
+          # ------------------------------------------------
           cat > narobos/config/package-lists/gaming.list.chroot << 'EOF'
           gamemode
           mangohud
           ffmpeg
           libavcodec-extra
+          vulkan-tools
+          mesa-utils
           EOF
 
+          # ------------------------------------------------
+          # Calamares graphical installer
+          # ------------------------------------------------
+          cat > narobos/config/package-lists/installer.list.chroot << 'EOF'
+          calamares
+          calamares-settings-debian
+          os-prober
+          parted
+          gparted
+          EOF
+
+          # ------------------------------------------------
+          # Package manager
+          # ------------------------------------------------
+          cat > narobos/config/package-lists/pkgmanager.list.chroot << 'EOF'
+          synaptic
+          apt-xapian-index
+          gdebi
+          flatpak
+          gnome-software
+          gnome-software-plugin-flatpak
+          EOF
+
+          # ------------------------------------------------
+          # Hook: add repos (Steam etc)
+          # ------------------------------------------------
           cat > narobos/auto/hooks/live/0010-add-repos.hook.chroot << 'EOF'
           #!/bin/bash
           set -e
@@ -110,17 +184,131 @@ jobs:
           cat > /etc/apt/sources.list.d/steam.list << REPO
           deb [arch=amd64,i386 signed-by=/usr/share/keyrings/steam.gpg] https://repo.steampowered.com/steam/ stable steam
           REPO
+          # Add Flathub for flatpak
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
           apt-get update
           EOF
 
-          cat > narobos/auto/hooks/live/0030-gaming-tweaks.hook.chroot << 'EOF'
+          # ------------------------------------------------
+          # Hook: install Steam + Proton-GE
+          # ------------------------------------------------
+          cat > narobos/auto/hooks/live/0020-steam.hook.chroot << 'EOF'
+          #!/bin/bash
+          set -e
+          DEBIAN_FRONTEND=noninteractive apt-get install -y steam steam-devices || true
+          # Proton-GE
+          PROTON_VER=$(curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          if [ -n "$PROTON_VER" ]; then
+            mkdir -p /usr/share/narobos/proton-ge
+            curl -fsSL "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${PROTON_VER}/${PROTON_VER}.tar.gz" \
+              -o /tmp/proton-ge.tar.gz
+            tar -xzf /tmp/proton-ge.tar.gz -C /usr/share/narobos/proton-ge
+            rm /tmp/proton-ge.tar.gz
+            mkdir -p /etc/skel/.steam/root/compatibilitytools.d
+            ln -sf /usr/share/narobos/proton-ge/${PROTON_VER} \
+              /etc/skel/.steam/root/compatibilitytools.d/${PROTON_VER}
+          fi
+          EOF
+
+          # ------------------------------------------------
+          # Hook: auto driver installer script
+          # ------------------------------------------------
+          cat > narobos/auto/hooks/live/0030-drivers.hook.chroot << 'EOF'
+          #!/bin/bash
+          set -e
+
+          # Write the auto-driver-installer script that runs on first boot
+          cat > /usr/local/bin/narobos-install-drivers << 'DRIVERSCRIPT'
+          #!/bin/bash
+          # NarobOS Auto Driver Installer
+          # Detects hardware and installs the correct drivers
+
+          LOGFILE=/var/log/narobos-drivers.log
+          exec > >(tee -a $LOGFILE) 2>&1
+
+          echo "[NarobOS] Starting auto driver detection..."
+
+          # Detect GPU
+          GPU=$(lspci | grep -iE 'vga|3d|display')
+
+          if echo "$GPU" | grep -qi nvidia; then
+            echo "[NarobOS] Nvidia GPU detected — installing nvidia-driver..."
+            apt-get install -y nvidia-driver nvidia-vulkan-icd nvidia-settings
+            echo "[NarobOS] Nvidia driver installed."
+
+          elif echo "$GPU" | grep -qi amd; then
+            echo "[NarobOS] AMD GPU detected — installing AMDGPU + firmware..."
+            apt-get install -y firmware-amd-graphics mesa-vulkan-drivers \
+              mesa-va-drivers libvulkan1 radeontop
+            echo "[NarobOS] AMD driver installed."
+
+          elif echo "$GPU" | grep -qi intel; then
+            echo "[NarobOS] Intel GPU detected — installing i915 + VA drivers..."
+            apt-get install -y intel-media-va-driver i965-va-driver \
+              mesa-vulkan-drivers libvulkan1
+            echo "[NarobOS] Intel driver installed."
+
+          else
+            echo "[NarobOS] Unknown GPU — installing generic Mesa drivers..."
+            apt-get install -y mesa-vulkan-drivers libvulkan1
+          fi
+
+          # Detect WiFi
+          WIFI=$(lspci | grep -i network)
+
+          if echo "$WIFI" | grep -qi intel; then
+            echo "[NarobOS] Intel WiFi detected..."
+            apt-get install -y firmware-iwlwifi
+          elif echo "$WIFI" | grep -qi realtek; then
+            echo "[NarobOS] Realtek WiFi detected..."
+            apt-get install -y firmware-realtek
+          elif echo "$WIFI" | grep -qi atheros; then
+            echo "[NarobOS] Atheros WiFi detected..."
+            apt-get install -y firmware-atheros
+          fi
+
+          echo "[NarobOS] Driver installation complete."
+          DRIVERSCRIPT
+
+          chmod +x /usr/local/bin/narobos-install-drivers
+
+          # Create a .desktop autostart entry to run driver installer on first boot
+          cat > /etc/xdg/autostart/narobos-drivers.desktop << 'DESKTOP'
+          [Desktop Entry]
+          Type=Application
+          Name=NarobOS Driver Installer
+          Exec=bash -c 'pkexec /usr/local/bin/narobos-install-drivers && rm /etc/xdg/autostart/narobos-drivers.desktop'
+          Icon=system-software-install
+          Comment=Install hardware drivers automatically
+          X-GNOME-Autostart-enabled=true
+          OnlyShowIn=XFCE;
+          DESKTOP
+
+          EOF
+
+          # ------------------------------------------------
+          # Hook: gaming performance tweaks
+          # ------------------------------------------------
+          cat > narobos/auto/hooks/live/0040-gaming-tweaks.hook.chroot << 'EOF'
           #!/bin/bash
           set -e
           cat > /etc/sysctl.d/99-narobos-gaming.conf << SYSCTL
           vm.swappiness=10
           vm.dirty_ratio=10
           fs.inotify.max_user_watches=524288
+          net.core.netdev_max_backlog=16384
           SYSCTL
+
+          cat > /etc/gamemode.ini << GAMEMODE
+          [general]
+          renice=10
+          ioprio=0
+          [gpu]
+          apply_gpu_optimisations=accept-responsibility
+          gpu_device=0
+          amd_performance_level=high
+          GAMEMODE
+
           mkdir -p /etc/skel/.config/MangoHud
           cat > /etc/skel/.config/MangoHud/MangoHud.conf << MANGO
           fps
@@ -137,6 +325,116 @@ jobs:
           MANGO
           EOF
 
+          # ------------------------------------------------
+          # Hook: configure LightDM + XFCE autologin for live
+          # ------------------------------------------------
+          cat > narobos/auto/hooks/live/0050-lightdm.hook.chroot << 'EOF'
+          #!/bin/bash
+          set -e
+          # Create live user
+          useradd -m -s /bin/bash -G sudo,audio,video,plugdev,netdev narobos || true
+          echo "narobos:narobos" | chpasswd
+          echo "narobos ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/narobos
+
+          # Autologin for live session
+          mkdir -p /etc/lightdm
+          cat > /etc/lightdm/lightdm.conf << LDM
+          [Seat:*]
+          autologin-user=narobos
+          autologin-user-timeout=0
+          user-session=xfce
+          LDM
+
+          # Enable lightdm
+          systemctl enable lightdm || true
+          EOF
+
+          # ------------------------------------------------
+          # Hook: Calamares installer config
+          # ------------------------------------------------
+          cat > narobos/auto/hooks/live/0060-calamares.hook.chroot << 'EOF'
+          #!/bin/bash
+          set -e
+          mkdir -p /etc/calamares/modules
+
+          cat > /etc/calamares/branding.desc << BRAND
+          componentName: narobos
+          strings:
+            productName: NarobOS
+            shortProductName: NarobOS
+            version: "1.0"
+            shortVersion: "1.0"
+            versionedName: NarobOS 1.0
+            shortVersionedName: NarobOS 1.0
+            bootloaderEntryName: NarobOS
+            productUrl: https://narobos.local
+            supportUrl: https://narobos.local
+            releaseNotesUrl: https://narobos.local
+          images:
+            productLogo: "narobos.png"
+            productIcon: "narobos.png"
+            productWelcome: "languages.png"
+          BRAND
+
+          # Install to desktop shortcut
+          cat > /usr/share/applications/install-narobos.desktop << DESK
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Install NarobOS
+          Comment=Install NarobOS to your hard drive
+          Exec=calamares
+          Icon=calamares
+          Terminal=false
+          Categories=System;
+          DESK
+          EOF
+
+          # ------------------------------------------------
+          # Hook: desktop shortcuts and NarobOS welcome app
+          # ------------------------------------------------
+          cat > narobos/auto/hooks/live/0070-desktop.hook.chroot << 'EOF'
+          #!/bin/bash
+          set -e
+
+          # NarobOS welcome script
+          cat > /usr/local/bin/narobos-welcome << 'WELCOME'
+          #!/bin/bash
+          zenity --info \
+            --title="Welcome to NarobOS" \
+            --width=400 \
+            --text="<b>Welcome to NarobOS 1.0</b>\n\nYour lightweight gaming Linux distro.\n\n<b>To install:</b> Click the Install NarobOS icon on the desktop.\n\n<b>Gaming:</b> Open Steam from the menu.\n\n<b>Drivers:</b> Auto-installing your hardware drivers now...\n\nEnjoy!" \
+            --ok-label="Let's Go"
+          WELCOME
+          chmod +x /usr/local/bin/narobos-welcome
+
+          # Welcome autostart
+          cat > /etc/xdg/autostart/narobos-welcome.desktop << DESK
+          [Desktop Entry]
+          Type=Application
+          Name=NarobOS Welcome
+          Exec=/usr/local/bin/narobos-welcome
+          Icon=narobos
+          X-GNOME-Autostart-enabled=true
+          DESK
+
+          # Package manager desktop shortcut
+          cat > /usr/share/applications/narobos-packages.desktop << DESK
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=NarobOS Package Manager
+          Comment=Install and manage software
+          Exec=synaptic
+          Icon=synaptic
+          Terminal=false
+          Categories=System;PackageManager;
+          DESK
+          EOF
+
+          # ------------------------------------------------
+          # os-release identity
+          # ------------------------------------------------
           cat > narobos/config/includes.chroot/etc/narobos/os-release << 'EOF'
           NAME="NarobOS"
           VERSION="1.0"
@@ -148,6 +446,8 @@ jobs:
 
           chmod +x narobos/auto/config
           chmod +x narobos/auto/hooks/live/*.hook.chroot
+          echo "NarobOS project created:"
+          find narobos -type f | sort
 
       - name: Configure live-build
         working-directory: narobos
