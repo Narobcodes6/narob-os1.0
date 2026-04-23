@@ -1,14 +1,18 @@
-name: NarobOS ISO Pipeline
+name: NarobOS ISO Builder
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build ISO
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install dependencies
@@ -25,13 +29,12 @@ jobs:
             mtools \
             dos2unix
 
-      - name: Create build environment
+      - name: Setup live-build config
         run: |
-          mkdir -p iso-build/auto
-          mkdir -p iso-build/config/package-lists
+          mkdir -p build/auto
+          mkdir -p build/config/package-lists
 
-          # Create config script
-          cat << 'EOF' > iso-build/auto/config
+          cat << 'EOF' > build/auto/config
           #!/bin/sh
           set -e
 
@@ -46,12 +49,10 @@ jobs:
             --apt-recommends false
           EOF
 
-          # Fix permissions + line endings (prevents exit 126)
-          chmod 755 iso-build/auto/config
-          dos2unix iso-build/auto/config
+          chmod +x build/auto/config
+          dos2unix build/auto/config
 
-          # Minimal package list
-          cat << 'EOF' > iso-build/config/package-lists/base.list.chroot
+          cat << 'EOF' > build/config/package-lists/base.list.chroot
           systemd
           systemd-sysv
           bash
@@ -61,15 +62,15 @@ jobs:
           debian-archive-keyring
           EOF
 
-      - name: Configure live-build
+      - name: Run configuration
         run: |
-          cd iso-build
-          ls -l auto   # debug visibility
+          cd build
+          ls -l auto
           sudo ./auto/config
 
       - name: Build ISO
         run: |
-          cd iso-build
+          cd build
           sudo lb clean
           sudo lb build
 
@@ -77,4 +78,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
-          path: iso-build/*.iso
+          path: build/*.iso
