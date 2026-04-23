@@ -1,57 +1,9 @@
-name: Build NarobOS ISO
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Find and move files if nested
+- name: Find and move files if nested
         run: |
-          if [ ! -f build.sh ] && [ -d narobos ]; then
-            echo "Files are inside narobos/ folder, moving up..."
-            cp -r narobos/. .
+          if [ ! -f build.sh ]; then
+            BUILDSH=$(find . -name "build.sh" | head -1)
+            SRCDIR=$(dirname "$BUILDSH")
+            echo "Found build.sh at: $BUILDSH, moving from $SRCDIR"
+            cp -r "$SRCDIR"/. .
           fi
           ls -la
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y live-build debootstrap curl gnupg xorriso isolinux syslinux-utils squashfs-tools grub-efi-amd64-bin grub-pc-bin mtools rsync
-
-      - name: Make scripts executable
-        run: chmod +x build.sh auto/hooks/live/*.hook.chroot
-
-      - name: Configure live-build
-        run: sudo bash auto/config
-
-      - name: Copy package lists
-        run: |
-          mkdir -p config/package-lists
-          cp auto/packages/*.list.chroot config/package-lists/
-
-      - name: Build ISO
-        run: sudo lb build 2>&1 | tee build.log
-
-      - name: Upload ISO
-        uses: actions/upload-artifact@v4
-        with:
-          name: narobos-iso
-          path: "*.iso"
-          retention-days: 14
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-          retention-days: 7
