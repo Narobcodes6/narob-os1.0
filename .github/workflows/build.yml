@@ -25,14 +25,12 @@ jobs:
             isolinux syslinux-utils squashfs-tools \
             grub-efi-amd64-bin grub-pc-bin mtools rsync
 
-      - name: Create full NarobOS project from scratch
+      - name: Create NarobOS project
         run: |
           mkdir -p narobos/auto/hooks/live
-          mkdir -p narobos/auto/packages
-          mkdir -p narobos/config/includes.chroot/etc/narobos
           mkdir -p narobos/config/package-lists
+          mkdir -p narobos/config/includes.chroot/etc/narobos
 
-          # ---- auto/config ----
           cat > narobos/auto/config << 'EOF'
           #!/bin/sh
           set -e
@@ -44,12 +42,10 @@ jobs:
             --apt-recommends false \
             --binary-images iso-hybrid \
             --bootloader grub-efi \
-            --uefi-secure-boot disable \
             --memtest none \
             --iso-application "NarobOS" \
             --iso-publisher "NarobOS Project" \
             --iso-volume "NarobOS 1.0" \
-            --image-name "narobos-1.0-amd64" \
             --linux-flavours amd64 \
             --firmware-binary true \
             --firmware-chroot true \
@@ -58,7 +54,6 @@ jobs:
             "${@}"
           EOF
 
-          # ---- base packages ----
           cat > narobos/config/package-lists/base.list.chroot << 'EOF'
           systemd
           systemd-sysv
@@ -99,7 +94,6 @@ jobs:
           usbutils
           EOF
 
-          # ---- gaming packages ----
           cat > narobos/config/package-lists/gaming.list.chroot << 'EOF'
           gamemode
           mangohud
@@ -107,7 +101,6 @@ jobs:
           libavcodec-extra
           EOF
 
-          # ---- repo hook ----
           cat > narobos/auto/hooks/live/0010-add-repos.hook.chroot << 'EOF'
           #!/bin/bash
           set -e
@@ -120,7 +113,6 @@ jobs:
           apt-get update
           EOF
 
-          # ---- gaming tweaks hook ----
           cat > narobos/auto/hooks/live/0030-gaming-tweaks.hook.chroot << 'EOF'
           #!/bin/bash
           set -e
@@ -129,7 +121,6 @@ jobs:
           vm.dirty_ratio=10
           fs.inotify.max_user_watches=524288
           SYSCTL
-
           mkdir -p /etc/skel/.config/MangoHud
           cat > /etc/skel/.config/MangoHud/MangoHud.conf << MANGO
           fps
@@ -146,7 +137,6 @@ jobs:
           MANGO
           EOF
 
-          # ---- os-release ----
           cat > narobos/config/includes.chroot/etc/narobos/os-release << 'EOF'
           NAME="NarobOS"
           VERSION="1.0"
@@ -158,8 +148,6 @@ jobs:
 
           chmod +x narobos/auto/config
           chmod +x narobos/auto/hooks/live/*.hook.chroot
-          echo "Project structure created:"
-          find narobos -type f
 
       - name: Configure live-build
         working-directory: narobos
