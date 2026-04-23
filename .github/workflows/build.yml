@@ -20,7 +20,7 @@ jobs:
             live-build debootstrap \
             grub-pc-bin grub-efi-amd64-bin \
             squashfs-tools xorriso \
-            dosfstools mtools
+            dosfstools mtools gnupg
 
       - name: Prepare config
         run: |
@@ -28,11 +28,19 @@ jobs:
 
           mkdir -p build/config/package-lists
           mkdir -p build/config/includes.chroot/etc
+          mkdir -p build/config/hooks/live
 
-          # FIX: working DNS inside chroot (prevents exit 100)
+          # Fix DNS
           echo "nameserver 8.8.8.8" > build/config/includes.chroot/etc/resolv.conf
 
-          # REQUIRED packages for actual ISO creation
+          # Force clean Debian sources
+          cat << 'EOF' > build/config/includes.chroot/etc/apt/sources.list
+          deb http://deb.debian.org/debian bookworm main
+          deb http://deb.debian.org/debian-security bookworm-security main
+          deb http://deb.debian.org/debian bookworm-updates main
+          EOF
+
+          # Minimal working system
           cat << 'EOF' > build/config/package-lists/base.list.chroot
           systemd
           systemd-sysv
@@ -45,18 +53,27 @@ jobs:
           live-config
           EOF
 
+          # Force apt update inside chroot (critical fix)
+          cat << 'EOF' > build/config/hooks/live/0100-apt-update.chroot
+          #!/bin/bash
+          set -e
+          apt-get update
+          EOF
+
+          chmod +x build/config/hooks/live/0100-apt-update.chroot
+
           cd build
 
-          # IMPORTANT: ensure live ISO is actually built
           sudo lb config \
             --mode debian \
             --distribution bookworm \
             --architectures amd64 \
             --binary-images iso-hybrid \
             --system live \
+            --mirror-bootstrap http://deb.debian.org/debian \
+            --mirror-chroot http://deb.debian.org/debian \
             --archive-areas "main" \
-            --debian-installer none \
-            --iso-volume "NarobOS"
+            --debian-installer none
 
       - name: Build ISO
         run: |
@@ -64,21 +81,17 @@ jobs:
           cd build
 
           sudo lb clean
-
-          # Capture full logs
           sudo lb build > ../build.log 2>&1
 
-          echo "==== BUILD OUTPUT ===="
-          ls -lah .
+          echo "==== OUTPUT FILES ===="
+          ls -lah
 
-          echo "==== SEARCHING FOR ISO ===="
+          echo "==== ISO SEARCH ===="
           find . -name "*.iso" || true
 
-          # HARD FAIL if ISO not created
           if ! find . -name "*.iso" | grep -q .; then
-            echo "❌ ISO was NOT created"
-            echo "==== LAST 100 LOG LINES ===="
-            tail -n 100 ../build.log
+            echo "❌ ISO NOT CREATED"
+            tail -n 150 ../build.log
             exit 1
           fi
 
@@ -86,9 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
-          path: |
-            build/*.iso
-            build/**/*.iso
+          path: build/**/*.iso
 
       - name: Upload logs
         if: always()
