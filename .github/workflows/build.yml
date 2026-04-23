@@ -1,42 +1,37 @@
 name: NarobOS ISO Pipeline
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
-  build-iso:
-    name: Build Live ISO
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 100
 
     steps:
-      - name: Clone Repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install Required Tools
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             live-build \
             debootstrap \
-            grub-efi-amd64-bin \
             grub-pc-bin \
+            grub-efi-amd64-bin \
             squashfs-tools \
             xorriso \
             dosfstools \
-            mtools
+            mtools \
+            dos2unix
 
-      - name: Set Up Build Directory
+      - name: Create build environment
         run: |
-          mkdir -p iso-build
-          cd iso-build
+          mkdir -p iso-build/auto
+          mkdir -p iso-build/config/package-lists
 
-          mkdir -p auto config/package-lists
-
-          cat << 'EOF' > auto/config
+          # Create config script
+          cat << 'EOF' > iso-build/auto/config
           #!/bin/sh
           set -e
 
@@ -46,15 +41,17 @@ jobs:
             --architectures amd64 \
             --binary-images iso-hybrid \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --bootloader grub-efi \
             --debian-installer none \
-            --apt-recommends false \
-            --iso-volume "NarobOS"
+            --bootloader grub-efi \
+            --apt-recommends false
           EOF
 
-          chmod +x auto/config
+          # Fix permissions + line endings (prevents exit 126)
+          chmod 755 iso-build/auto/config
+          dos2unix iso-build/auto/config
 
-          cat << 'EOF' > config/package-lists/system.list.chroot
+          # Minimal package list
+          cat << 'EOF' > iso-build/config/package-lists/base.list.chroot
           systemd
           systemd-sysv
           bash
@@ -64,18 +61,19 @@ jobs:
           debian-archive-keyring
           EOF
 
-      - name: Configure Build
+      - name: Configure live-build
         run: |
           cd iso-build
+          ls -l auto   # debug visibility
           sudo ./auto/config
 
-      - name: Execute Build
+      - name: Build ISO
         run: |
           cd iso-build
           sudo lb clean
           sudo lb build
 
-      - name: Upload ISO Artifact
+      - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
