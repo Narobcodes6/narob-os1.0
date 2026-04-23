@@ -14,6 +14,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Find and move files if nested
+        run: |
+          if [ ! -f build.sh ] && [ -d narobos ]; then
+            echo "Files are inside narobos/ folder, moving up..."
+            cp -r narobos/. .
+          fi
+          ls -la
+
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
