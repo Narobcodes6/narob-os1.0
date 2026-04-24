@@ -29,7 +29,7 @@ jobs:
         run: |
           mkdir -p narobos/auto/hooks/live
           mkdir -p narobos/config/package-lists
-          mkdir -p narobos/config/includes.chroot/{etc/narobos,usr/local/bin,etc/xdg/autostart,usr/share/applications}
+          mkdir -p narobos/config/includes.chroot/{etc,usr/local/bin,etc/xdg/autostart,usr/share/applications}
 
           cat > narobos/auto/config << 'EOF'
           #!/bin/sh
@@ -57,26 +57,7 @@ jobs:
             "${@}"
           EOF
 
-          # Patch live-build's hardcoded security mirror after config runs
-          # This ensures bookworm-security is used not the old bookworm/updates path
-          cat > narobos/auto/hooks/live/0001-fix-security-mirror.hook.chroot << 'EOF'
-          #!/bin/bash
-          set -e
-          # Replace any wrong security mirror entries
-          sed -i 's|http://security.debian.org bookworm/updates|http://deb.debian.org/debian-security bookworm-security|g' \
-            /etc/apt/sources.list 2>/dev/null || true
-          sed -i 's|http://security.debian.org/debian-security bookworm/updates|http://deb.debian.org/debian-security bookworm-security|g' \
-            /etc/apt/sources.list 2>/dev/null || true
-          # Write a clean sources.list
-          cat > /etc/apt/sources.list << SOURCES
-          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-          SOURCES
-          apt-get update
-          EOF
-
-          # Absolute minimum packages
+          # Base packages
           cat > narobos/config/package-lists/base.list.chroot << 'EOF'
           systemd
           systemd-sysv
@@ -96,7 +77,7 @@ jobs:
           usbutils
           EOF
 
-          # GUI - XFCE
+          # GUI
           cat > narobos/config/package-lists/gui.list.chroot << 'EOF'
           xfce4
           xfce4-terminal
@@ -129,6 +110,17 @@ jobs:
           gdebi
           EOF
 
+          # Hook: fix sources FIRST thing inside chroot
+          cat > narobos/auto/hooks/live/0001-fix-sources.hook.chroot << 'EOF'
+          #!/bin/bash
+          cat > /etc/apt/sources.list << SOURCES
+          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          SOURCES
+          apt-get update -qq
+          EOF
+
           # Hook: gaming tweaks
           cat > narobos/auto/hooks/live/0040-gaming-tweaks.hook.chroot << 'EOF'
           #!/bin/bash
@@ -154,7 +146,7 @@ jobs:
           MANGO
           EOF
 
-          # Hook: LightDM autologin + live user
+          # Hook: LightDM + live user
           cat > narobos/auto/hooks/live/0050-lightdm.hook.chroot << 'EOF'
           #!/bin/bash
           set -e
@@ -209,25 +201,11 @@ jobs:
 
           chmod +x narobos/auto/config
           chmod +x narobos/auto/hooks/live/*.hook.chroot
-          echo "Project structure:"
           find narobos -type f | sort
 
       - name: Configure live-build
         working-directory: narobos
         run: sudo bash auto/config
-
-      - name: Fix sources.list before build
-        working-directory: narobos
-        run: |
-          # Override live-build's generated sources to use correct bookworm-security URL
-          mkdir -p config/archives
-          cat > config/archives/debian-security.list.chroot << 'SOURCES'
-          deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-          SOURCES
-          cat > config/archives/debian.list.chroot << 'SOURCES'
-          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-          SOURCES
 
       - name: Build ISO
         working-directory: narobos
@@ -247,4 +225,3 @@ jobs:
           name: build-log
           path: build.log
           retention-days: 7
-
