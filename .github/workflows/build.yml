@@ -110,7 +110,7 @@ jobs:
           gdebi
           EOF
 
-          # Hook: fix sources FIRST thing inside chroot
+          # Hook: fix sources FIRST
           cat > narobos/auto/hooks/live/0001-fix-sources.hook.chroot << 'EOF'
           #!/bin/bash
           cat > /etc/apt/sources.list << SOURCES
@@ -201,7 +201,6 @@ jobs:
 
           chmod +x narobos/auto/config
           chmod +x narobos/auto/hooks/live/*.hook.chroot
-          find narobos -type f | sort
 
       - name: Configure live-build
         working-directory: narobos
@@ -211,11 +210,21 @@ jobs:
         working-directory: narobos
         run: sudo lb build 2>&1 | tee ../build.log
 
+      - name: Find ISO
+        if: always()
+        run: |
+          echo "=== Searching for ISO files ==="
+          find / -name "*.iso" 2>/dev/null || echo "No ISO found"
+          echo "=== Contents of narobos/ ==="
+          ls -lah narobos/ || true
+          echo "=== Contents of working dir ==="
+          ls -lah || true
+
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
-          path: "narobos/*.iso"
+          path: "**/*.iso"
           retention-days: 14
 
       - name: Upload build log
