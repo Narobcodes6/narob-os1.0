@@ -1,93 +1,250 @@
-name: NarobOS ISO Builder
+name: Build NarobOS ISO
 
 on:
-  workflow_dispatch:
   push:
     branches: [ main ]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y \
-            live-build debootstrap \
-            grub-pc-bin \
-            squashfs-tools xorriso \
-            mtools
+            live-build debootstrap curl gnupg xorriso \
+            isolinux syslinux-utils squashfs-tools \
+            grub-efi-amd64-bin grub-pc-bin mtools rsync
 
-      - name: Setup config
+      - name: Create NarobOS project
         run: |
-          mkdir -p build/config/package-lists
-          mkdir -p build/config/hooks/normal
+          mkdir -p narobos/auto/hooks/live
+          mkdir -p narobos/config/package-lists
+          mkdir -p narobos/config/includes.chroot/{etc/narobos,usr/local/bin,etc/xdg/autostart,usr/share/applications}
 
-          # Minimal working system
-          cat << 'EOF' > build/config/package-lists/base.list.chroot
-          systemd-sysv
-          bash
-          apt
-          ca-certificates
-          debian-archive-keyring
-          live-boot
-          live-config
+          cat > narobos/auto/config << 'EOF'
+          #!/bin/sh
+          set -e
+          lb config noauto \
+            --system live \
+            --distribution bookworm \
+            --debian-installer none \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --apt-recommends false \
+            --binary-images iso-hybrid \
+            --bootloader grub-efi \
+            --memtest none \
+            --iso-application "NarobOS" \
+            --iso-publisher "NarobOS Project" \
+            --iso-volume "NarobOS 1.0" \
+            --linux-flavours amd64 \
+            --firmware-binary true \
+            --firmware-chroot true \
+            --mirror-bootstrap "http://deb.debian.org/debian/" \
+            --mirror-chroot "http://deb.debian.org/debian/" \
+            --mirror-chroot-security "http://deb.debian.org/debian-security/" \
+            --mirror-binary "http://deb.debian.org/debian/" \
+            --mirror-binary-security "http://deb.debian.org/debian-security/" \
+            "${@}"
           EOF
 
-          # 🔥 CRITICAL FIX: bind host DNS (this is what actually fixes exit 100)
-          cat << 'EOF' > build/config/hooks/normal/00-fix-dns.hook.chroot
+          # Patch live-build's hardcoded security mirror after config runs
+          # This ensures bookworm-security is used not the old bookworm/updates path
+          cat > narobos/auto/hooks/live/0001-fix-security-mirror.hook.chroot << 'EOF'
           #!/bin/bash
           set -e
-          mount --bind /etc/resolv.conf /etc/resolv.conf || true
+          # Replace any wrong security mirror entries
+          sed -i 's|http://security.debian.org bookworm/updates|http://deb.debian.org/debian-security bookworm-security|g' \
+            /etc/apt/sources.list 2>/dev/null || true
+          sed -i 's|http://security.debian.org/debian-security bookworm/updates|http://deb.debian.org/debian-security bookworm-security|g' \
+            /etc/apt/sources.list 2>/dev/null || true
+          # Write a clean sources.list
+          cat > /etc/apt/sources.list << SOURCES
+          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          SOURCES
+          apt-get update
           EOF
 
-          chmod +x build/config/hooks/normal/00-fix-dns.hook.chroot
+          # Absolute minimum packages
+          cat > narobos/config/package-lists/base.list.chroot << 'EOF'
+          systemd
+          systemd-sysv
+          dbus
+          udev
+          sudo
+          bash
+          coreutils
+          util-linux
+          procps
+          curl
+          wget
+          ca-certificates
+          gnupg
+          htop
+          pciutils
+          usbutils
+          EOF
 
-          cd build
+          # GUI - XFCE
+          cat > narobos/config/package-lists/gui.list.chroot << 'EOF'
+          xfce4
+          xfce4-terminal
+          lightdm
+          lightdm-gtk-greeter
+          xorg
+          xserver-xorg
+          xserver-xorg-input-libinput
+          thunar
+          zenity
+          EOF
 
-          sudo lb config \
-            --mode debian \
-            --distribution bookworm \
-            --architectures amd64 \
-            --binary-images iso-hybrid \
-            --system live \
-            --bootloader grub-pc \
-            --archive-areas "main" \
-            --debian-installer none \
-            --apt-options "--yes -o Acquire::Retries=3"
+          # Gaming
+          cat > narobos/config/package-lists/gaming.list.chroot << 'EOF'
+          gamemode
+          mangohud
+          mesa-utils
+          EOF
+
+          # Installer
+          cat > narobos/config/package-lists/installer.list.chroot << 'EOF'
+          calamares
+          parted
+          gparted
+          EOF
+
+          # Package manager
+          cat > narobos/config/package-lists/pkgmanager.list.chroot << 'EOF'
+          synaptic
+          gdebi
+          EOF
+
+          # Hook: gaming tweaks
+          cat > narobos/auto/hooks/live/0040-gaming-tweaks.hook.chroot << 'EOF'
+          #!/bin/bash
+          set -e
+          cat > /etc/sysctl.d/99-narobos-gaming.conf << SYSCTL
+          vm.swappiness=10
+          vm.dirty_ratio=10
+          fs.inotify.max_user_watches=524288
+          SYSCTL
+          mkdir -p /etc/skel/.config/MangoHud
+          cat > /etc/skel/.config/MangoHud/MangoHud.conf << MANGO
+          fps
+          frametime
+          cpu_stats
+          gpu_stats
+          gpu_temp
+          cpu_temp
+          ram
+          vram
+          position=top-left
+          font_size=20
+          toggle_hud=F12
+          MANGO
+          EOF
+
+          # Hook: LightDM autologin + live user
+          cat > narobos/auto/hooks/live/0050-lightdm.hook.chroot << 'EOF'
+          #!/bin/bash
+          set -e
+          useradd -m -s /bin/bash -G sudo,audio,video,plugdev narobos || true
+          echo "narobos:narobos" | chpasswd
+          echo "narobos ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/narobos
+          mkdir -p /etc/lightdm
+          cat > /etc/lightdm/lightdm.conf << LDM
+          [Seat:*]
+          autologin-user=narobos
+          autologin-user-timeout=0
+          user-session=xfce
+          LDM
+          systemctl enable lightdm || true
+          EOF
+
+          # Hook: desktop shortcuts
+          cat > narobos/auto/hooks/live/0060-desktop.hook.chroot << 'EOF'
+          #!/bin/bash
+          set -e
+          cat > /usr/share/applications/install-narobos.desktop << DESK
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Install NarobOS
+          Exec=calamares
+          Icon=calamares
+          Terminal=false
+          Categories=System;
+          DESK
+          cat > /usr/share/applications/narobos-packages.desktop << DESK
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=NarobOS Package Manager
+          Exec=synaptic
+          Icon=synaptic
+          Terminal=false
+          Categories=System;
+          DESK
+          EOF
+
+          # OS identity
+          cat > narobos/config/includes.chroot/etc/os-release << 'EOF'
+          NAME="NarobOS"
+          VERSION="1.0"
+          ID=narobos
+          ID_LIKE=debian
+          PRETTY_NAME="NarobOS 1.0"
+          VERSION_ID="1.0"
+          EOF
+
+          chmod +x narobos/auto/config
+          chmod +x narobos/auto/hooks/live/*.hook.chroot
+          echo "Project structure:"
+          find narobos -type f | sort
+
+      - name: Configure live-build
+        working-directory: narobos
+        run: sudo bash auto/config
+
+      - name: Fix sources.list before build
+        working-directory: narobos
+        run: |
+          # Override live-build's generated sources to use correct bookworm-security URL
+          mkdir -p config/archives
+          cat > config/archives/debian-security.list.chroot << 'SOURCES'
+          deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          SOURCES
+          cat > config/archives/debian.list.chroot << 'SOURCES'
+          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          SOURCES
 
       - name: Build ISO
-        run: |
-          cd build
-          sudo lb clean
-
-          # capture logs
-          sudo lb build > ../build.log 2>&1 || true
-
-          echo "==== LAST 150 LOG LINES ===="
-          tail -n 150 ../build.log || true
-
-          echo "==== FILES ===="
-          find . -maxdepth 2
-
-          # fail if ISO missing
-          if ! find . -name "*.iso" | grep -q .; then
-            echo "❌ ISO NOT CREATED"
-            exit 1
-          fi
+        working-directory: narobos
+        run: sudo lb build 2>&1 | tee ../build.log
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: narobos-iso
-          path: build/**/*.iso
+          path: "narobos/*.iso"
+          retention-days: 14
 
-      - name: Upload logs
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: build.log
+          retention-days: 7
+
