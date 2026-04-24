@@ -110,24 +110,19 @@ jobs:
           gdebi
           EOF
 
-          # Hook: fix sources + block ubuntu-keyring
+          # Hook: fix sources + dummy ubuntu-keyring
           cat > narobos/auto/hooks/live/0001-fix-sources.hook.chroot << 'EOF'
           #!/bin/bash
-          # Fix sources.list
           cat > /etc/apt/sources.list << SOURCES
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           SOURCES
-
-          # Block ubuntu-keyring from ever being installed
           cat > /etc/apt/preferences.d/block-ubuntu << PREF
           Package: ubuntu-keyring
           Pin: release *
           Pin-Priority: -1
           PREF
-
-          # Also provide a dummy ubuntu-keyring so deps dont break
           mkdir -p /tmp/fake-ubuntu-keyring/DEBIAN
           cat > /tmp/fake-ubuntu-keyring/DEBIAN/control << CTRL
           Package: ubuntu-keyring
@@ -138,7 +133,6 @@ jobs:
           CTRL
           dpkg-deb --build /tmp/fake-ubuntu-keyring /tmp/ubuntu-keyring_9999_all.deb
           dpkg -i /tmp/ubuntu-keyring_9999_all.deb
-
           apt-get update -qq
           EOF
 
@@ -231,11 +225,12 @@ jobs:
         working-directory: narobos
         run: sudo lb build 2>&1 | tee ../build.log
 
-      - name: Find ISO
+      - name: Fix permissions and find ISO
         if: always()
         run: |
+          sudo chown -R runner:runner . 2>/dev/null || true
           echo "=== Searching for ISO ==="
-          find / -name "*.iso" 2>/dev/null || true
+          find . -name "*.iso" 2>/dev/null || true
           echo "=== narobos/ contents ==="
           ls -lah narobos/ || true
           echo "=== working dir ==="
