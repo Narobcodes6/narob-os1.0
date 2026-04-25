@@ -24,27 +24,97 @@ jobs:
             debootstrap squashfs-tools xorriso \
             grub-pc-bin grub-efi-amd64-bin mtools dosfstools curl
 
-      - name: Bootstrap Debian base
+      - name: Bootstrap Debian base (minimal)
         run: |
-          PKGS="systemd,systemd-sysv,dbus,udev,sudo,bash,coreutils,util-linux,procps,curl,wget,ca-certificates,gnupg,pciutils,usbutils,htop,network-manager,wpasupplicant,firmware-linux,firmware-linux-nonfree,firmware-amd-graphics,firmware-iwlwifi,firmware-realtek,xfce4,xfce4-terminal,lightdm,lightdm-gtk-greeter,xorg,xserver-xorg,xserver-xorg-input-libinput,thunar,zenity,synaptic,gdebi,parted,mesa-vulkan-drivers,libvulkan1,libgl1-mesa-dri,pipewire,pipewire-pulse,pipewire-alsa,wireplumber,alsa-utils,fonts-dejavu-core"
-
+          # Bootstrap with ONLY the bare minimum first
           sudo debootstrap \
             --arch=amd64 \
             --variant=minbase \
-            --include="$PKGS" \
             --components=main,contrib,non-free,non-free-firmware \
             bookworm \
             /mnt/narobos \
             http://deb.debian.org/debian
 
-      - name: Configure the system
+      - name: Block service startup inside chroot
         run: |
+          # Prevent any services from starting during package install
+          sudo tee /mnt/narobos/usr/sbin/policy-rc.d << 'EOF'
+          #!/bin/sh
+          exit 101
+          EOF
+          sudo chmod +x /mnt/narobos/usr/sbin/policy-rc.d
+
+          # Also fake systemctl so it does nothing
+          sudo tee /mnt/narobos/usr/local/bin/systemctl << 'EOF'
+          #!/bin/sh
+          exit 0
+          EOF
+          sudo chmod +x /mnt/narobos/usr/local/bin/systemctl
+
+      - name: Install packages inside chroot
+        run: |
+          # Mount needed filesystems
+          sudo mount --bind /proc /mnt/narobos/proc
+          sudo mount --bind /sys /mnt/narobos/sys
+          sudo mount --bind /dev /mnt/narobos/dev
+          sudo mount --bind /dev/pts /mnt/narobos/dev/pts
+
+          # Fix sources
           sudo tee /mnt/narobos/etc/apt/sources.list << 'EOF'
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           EOF
 
+          # Install everything in one chroot session
+          sudo chroot /mnt/narobos /bin/bash << 'CHROOT'
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+
+          # Core system
+          apt-get install -y --no-install-recommends \
+            systemd systemd-sysv dbus udev sudo \
+            bash coreutils util-linux procps \
+            curl wget ca-certificates gnupg \
+            pciutils usbutils htop \
+            network-manager wpasupplicant
+
+          # Firmware
+          apt-get install -y --no-install-recommends \
+            firmware-linux firmware-linux-nonfree \
+            firmware-amd-graphics firmware-iwlwifi firmware-realtek
+
+          # GPU / display
+          apt-get install -y --no-install-recommends \
+            mesa-vulkan-drivers libvulkan1 libgl1-mesa-dri \
+            xorg xserver-xorg xserver-xorg-input-libinput
+
+          # XFCE desktop
+          apt-get install -y --no-install-recommends \
+            xfce4 xfce4-terminal lightdm lightdm-gtk-greeter \
+            thunar zenity
+
+          # Audio
+          apt-get install -y --no-install-recommends \
+            pipewire pipewire-pulse pipewire-alsa wireplumber alsa-utils
+
+          # Tools
+          apt-get install -y --no-install-recommends \
+            synaptic gdebi parted fonts-dejavu-core
+
+          # Clean up
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+          CHROOT
+
+          # Unmount
+          sudo umount /mnt/narobos/dev/pts || true
+          sudo umount /mnt/narobos/dev || true
+          sudo umount /mnt/narobos/proc || true
+          sudo umount /mnt/narobos/sys || true
+
+      - name: Configure the system
+        run: |
           sudo tee /mnt/narobos/etc/os-release << 'EOF'
           NAME="NarobOS"
           VERSION="1.0"
@@ -67,8 +137,6 @@ jobs:
           autologin-user-timeout=0
           user-session=xfce
           EOF
-
-          sudo chroot /mnt/narobos systemctl enable lightdm NetworkManager || true
 
           sudo tee /mnt/narobos/etc/sysctl.d/99-narobos.conf << 'EOF'
           vm.swappiness=10
@@ -110,6 +178,9 @@ jobs:
           EOF
           sudo chmod +x /mnt/narobos/usr/local/bin/narobos-drivers
 
+          # Remove the fake systemctl now that install is done
+          sudo rm -f /mnt/narobos/usr/local/bin/systemctl
+
       - name: Build squashfs and ISO
         run: |
           sudo mkdir -p /mnt/iso/{live,boot/grub}
@@ -144,7 +215,7 @@ jobs:
           sudo grub-mkrescue -o /tmp/narobos-1.0-amd64.iso /mnt/iso 2>&1
           sudo chown runner:runner /tmp/narobos-1.0-amd64.iso
           ls -lah /tmp/narobos-1.0-amd64.iso
-          echo "Done!"
+          echo "ISO ready!"
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
