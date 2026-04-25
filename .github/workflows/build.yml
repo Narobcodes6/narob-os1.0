@@ -26,7 +26,6 @@ jobs:
 
       - name: Bootstrap Debian base (minimal)
         run: |
-          # Bootstrap with ONLY the bare minimum first
           sudo debootstrap \
             --arch=amd64 \
             --variant=minbase \
@@ -37,14 +36,12 @@ jobs:
 
       - name: Block service startup inside chroot
         run: |
-          # Prevent any services from starting during package install
           sudo tee /mnt/narobos/usr/sbin/policy-rc.d << 'EOF'
           #!/bin/sh
           exit 101
           EOF
           sudo chmod +x /mnt/narobos/usr/sbin/policy-rc.d
 
-          # Also fake systemctl so it does nothing
           sudo tee /mnt/narobos/usr/local/bin/systemctl << 'EOF'
           #!/bin/sh
           exit 0
@@ -53,23 +50,23 @@ jobs:
 
       - name: Install packages inside chroot
         run: |
-          # Mount needed filesystems
           sudo mount --bind /proc /mnt/narobos/proc
           sudo mount --bind /sys /mnt/narobos/sys
           sudo mount --bind /dev /mnt/narobos/dev
           sudo mount --bind /dev/pts /mnt/narobos/dev/pts
 
-          # Fix sources
           sudo tee /mnt/narobos/etc/apt/sources.list << 'EOF'
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           EOF
 
-          # Install everything in one chroot session
           sudo chroot /mnt/narobos /bin/bash << 'CHROOT'
           export DEBIAN_FRONTEND=noninteractive
           apt-get update -qq
+
+          # Kernel first
+          apt-get install -y --no-install-recommends linux-image-amd64 initramfs-tools live-boot
 
           # Core system
           apt-get install -y --no-install-recommends \
@@ -102,12 +99,10 @@ jobs:
           apt-get install -y --no-install-recommends \
             synaptic gdebi parted fonts-dejavu-core
 
-          # Clean up
           apt-get clean
           rm -rf /var/lib/apt/lists/*
           CHROOT
 
-          # Unmount
           sudo umount /mnt/narobos/dev/pts || true
           sudo umount /mnt/narobos/dev || true
           sudo umount /mnt/narobos/proc || true
@@ -178,7 +173,6 @@ jobs:
           EOF
           sudo chmod +x /mnt/narobos/usr/local/bin/narobos-drivers
 
-          # Remove the fake systemctl now that install is done
           sudo rm -f /mnt/narobos/usr/local/bin/systemctl
 
       - name: Build squashfs and ISO
@@ -193,8 +187,12 @@ jobs:
             -e /mnt/narobos/dev
 
           echo "Copying kernel and initrd..."
-          sudo cp $(ls /mnt/narobos/boot/vmlinuz-* | tail -1) /mnt/iso/boot/vmlinuz
-          sudo cp $(ls /mnt/narobos/boot/initrd.img-* | tail -1) /mnt/iso/boot/initrd.img
+          KERNEL=$(ls /mnt/narobos/boot/vmlinuz-* 2>/dev/null | tail -1)
+          INITRD=$(ls /mnt/narobos/boot/initrd.img-* 2>/dev/null | tail -1)
+          echo "Kernel: $KERNEL"
+          echo "Initrd: $INITRD"
+          sudo cp "$KERNEL" /mnt/iso/boot/vmlinuz
+          sudo cp "$INITRD" /mnt/iso/boot/initrd.img
 
           sudo tee /mnt/iso/boot/grub/grub.cfg << 'EOF'
           set default=0
